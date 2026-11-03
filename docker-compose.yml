@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ict
+      POSTGRES_PASSWORD: ict_dev_password
+      POSTGRES_DB: ict_journal
+    ports: ["5432:5432"]
+    volumes: [ictdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ict -d ict_journal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://ict:ict_dev_password@db:5432/ict_journal?schema=public
+      PORT: 4000
+      FRONTEND_ORIGIN: http://localhost:5173
+      FMP_API_KEY: ${FMP_API_KEY:-}
+    ports: ["4000:4000"]
+    depends_on:
+      db: {condition: service_healthy}
+  frontend:
+    build: ./frontend
+    ports: ["5173:5173"]
+    depends_on: [backend]
+volumes:
+  ictdata:

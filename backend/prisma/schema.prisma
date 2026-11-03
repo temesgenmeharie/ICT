@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+enum Direction { LONG SHORT }
+enum Status { PLANNED OPEN CLOSED CANCELLED }
+model Trade {
+ id String @id @default(cuid())
+ pair String @default("EUR/USD")
+ direction Direction
+ status Status @default(PLANNED)
+ session String?
+ entry Decimal? @db.Decimal(18,8)
+ stopLoss Decimal? @db.Decimal(18,8)
+ takeProfit Decimal? @db.Decimal(18,8)
+ balance Decimal @db.Decimal(14,2)
+ riskPercent Decimal @db.Decimal(5,2)
+ lotSize Decimal? @db.Decimal(10,4)
+ entryReason String?
+ checklist Json?
+ fvgMidpoint Decimal? @db.Decimal(18,8)
+ ceInvalidated Boolean @default(false)
+ createdAt DateTime @default(now())
+}
