@@ -1,0 +1,274 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum TradeDirection {
+  LONG
+  SHORT
+}
+
+enum TradeStatus {
+  DRAFT
+  PREPARED
+  APPROVED
+  EXECUTED
+  CLOSED
+  CANCELLED
+}
+
+enum ImpactLevel {
+  LOW
+  MEDIUM
+  HIGH
+  NONE
+}
+
+enum SetupType {
+  TURTLE_SOUP
+  SILVER_BULLET
+  JUDAS_SWING
+  BREAKER_BLOCK
+  FVG_EXPANSION
+  OTE_RETRACEMENT
+  OTHER
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  passwordHash     String
+  name             String?
+  role             Role              @default(USER)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  accounts         TradingAccount[]
+  tradePlans       TradePlan[]
+  checklistTemplates ChecklistTemplate[]
+  settings         UserSettings?
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultAccountBalance Decimal @default(10000.00) @db.Decimal(14, 2)
+  accountCurrency      String   @default("USD")
+  defaultRiskPercent   Decimal  @default(1.00) @db.Decimal(5, 2)
+  maxDailyRiskPercent  Decimal  @default(3.00) @db.Decimal(5, 2)
+  preferredTimezone    String   @default("America/New_York")
+  preferredPairs       String[] @default(["EUR/USD", "GBP/USD", "USD/JPY"])
+  blackoutBufferMinutes Int     @default(30)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model TradingAccount {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  broker      String?
+  currency    String      @default("USD")
+  balance     Decimal     @db.Decimal(14, 2)
+  leverage    Int         @default(100)
+  minLot      Decimal     @default(0.01) @db.Decimal(6, 2)
+  lotStep     Decimal     @default(0.01) @db.Decimal(6, 2)
+  isDefault   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  trades      TradePlan[]
+
+  @@index([userId])
+  @@map("trading_accounts")
+}
+
+model EconomicEvent {
+  id            String      @id @default(uuid())
+  providerId    String?     @unique
+  title         String
+  country       String
+  currency      String
+  impact        ImpactLevel
+  eventDateUtc  DateTime
+  previous      String?
+  forecast      String?
+  actual        String?
+  isBlackout    Boolean     @default(false)
+  syncedAt      DateTime    @default(now())
+
+  @@index([eventDateUtc])
+  @@index([currency, impact])
+  @@map("economic_events")
+}
+
+model CalendarSyncLog {
+  id          String   @id @default(uuid())
+  provider    String
+  status      String
+  eventsCount Int      @default(0)
+  message     String?
+  syncedAt    DateTime @default(now())
+
+  @@map("calendar_sync_logs")
+}
+
+model ChecklistTemplate {
+  id          String             @id @default(uuid())
+  userId      String?            // Null for system default templates
+  user        User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isDefault   Boolean            @default(false)
+  sections    ChecklistSection[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([userId])
+  @@map("checklist_templates")
+}
+
+model ChecklistSection {
+  id          String          @id @default(uuid())
+  templateId  String
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title       String
+  orderIndex  Int
+  items       ChecklistItem[]
+
+  @@index([templateId, orderIndex])
+  @@map("checklist_sections")
+}
+
+model ChecklistItem {
+  id          String           @id @default(uuid())
+  sectionId   String
+  section     ChecklistSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  text        String
+  orderIndex  Int
+  isMandatory Boolean          @default(true)
+
+  @@index([sectionId, orderIndex])
+  @@map("checklist_items")
+}
+
+model TradePlan {
+  id                   String           @id @default(uuid())
+  userId               String
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId            String?
+  account              TradingAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  pair                 String
+  direction            TradeDirection
+  status               TradeStatus      @default(DRAFT)
+  setupType            SetupType        @default(OTHER)
+  sessionName          String?
+
+  plannedEntry         Decimal?         @db.Decimal(18, 8)
+  plannedStopLoss      Decimal?         @db.Decimal(18, 8)
+  plannedTakeProfit    Decimal?         @db.Decimal(18, 8)
+  stopLossPips         Decimal?         @db.Decimal(10, 2)
+  accountBalance       Decimal          @db.Decimal(14, 2)
+  riskPercent          Decimal          @db.Decimal(5, 2)
+  monetaryRisk         Decimal?         @db.Decimal(14, 2)
+  plannedLotSize       Decimal?         @db.Decimal(10, 4)
+  plannedRiskReward    Decimal?         @db.Decimal(8, 2)
+  estimatedMargin      Decimal?         @db.Decimal(14, 2)
+
+  fvgLow               Decimal?         @db.Decimal(18, 8)
+  fvgHigh              Decimal?         @db.Decimal(18, 8)
+  consequentEncroachment Decimal?       @db.Decimal(18, 8)
+  ceInvalidationRule   String?
+  isCeInvalidated      Boolean          @default(false)
+
+  entryRationale       String?          @db.Text
+  liquidityTarget      String?
+  marketStructureNotes String?          @db.Text
+  emotionalState       String?
+  lessonsLearned       String?          @db.Text
+
+  actualEntry          Decimal?         @db.Decimal(18, 8)
+  actualExit           Decimal?         @db.Decimal(18, 8)
+  actualLotSize        Decimal?         @db.Decimal(10, 4)
+  actualPnl            Decimal?         @db.Decimal(14, 2)
+  actualPips           Decimal?         @db.Decimal(10, 2)
+  tradingCosts         Decimal?         @default(0.00) @db.Decimal(10, 2)
+  enteredAt            DateTime?
+  exitedAt             DateTime?
+
+  checklistSnapshot    TradeChecklistSnapshot?
+  screenshots          TradeScreenshot[]
+  tags                 TradeTag[]
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, pair])
+  @@index([createdAt])
+  @@map("trade_plans")
+}
+
+model TradeChecklistSnapshot {
+  id           String   @id @default(uuid())
+  tradePlanId  String   @unique
+  tradePlan    TradePlan @relation(fields: [tradePlanId], references: [id], onDelete: Cascade)
+  templateName String
+  snapshotData Json
+  completionPct Decimal @db.Decimal(5, 2)
+  capturedAt   DateTime @default(now())
+
+  @@map("trade_checklist_snapshots")
+}
+
+model TradeScreenshot {
+  id          String   @id @default(uuid())
+  tradePlanId String
+  tradePlan   TradePlan @relation(fields: [tradePlanId], references: [id], onDelete: Cascade)
+  stage       String
+  filePath    String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  uploadedAt  DateTime @default(now())
+
+  @@index([tradePlanId])
+  @@map("trade_screenshots")
+}
+
+model TradeTag {
+  id         String      @id @default(uuid())
+  name       String      @unique
+  tradePlans TradePlan[]
+
+  @@map("trade_tags")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@map("audit_logs")
+}
